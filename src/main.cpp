@@ -6,6 +6,7 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiUdp.h>
+#include <esp_task_wdt.h>
 
 #include "SparkFunBME280.h"
 
@@ -26,6 +27,7 @@ BME280 bme280;
 
 WebServer server(80);
 AutoConnect Portal(server);
+AutoConnectConfig Config;
 
 /**
  * Current interrupt count
@@ -177,13 +179,14 @@ static uint8_t manager_core = 0;
 static uint8_t fan_controller_core = 1;
 
 void manage_core_task(void *pv_parameters) {
+    Config.autoReconnect = true;
+    Config.menuItems = AC_MENUITEM_CONFIGNEW | AC_MENUITEM_DEVINFO | AC_MENUITEM_HOME | AC_MENUITEM_UPDATE;
+
+    esp_task_wdt_init(30, false);
+
     if (MDNS.begin("esp32")) {
         Serial.println("MDNS responder started");
     }
-
-    server.on("/", []() {
-        server.send(200, "text/plain", "Hello from the ESP32 Fan Controller!");
-    });
 
     server.on("/status", []() {
         server.send(200, "text/html", prepare_data_output());
@@ -255,6 +258,7 @@ void manage_core_task(void *pv_parameters) {
     }
 
     for (;;) {
+        vTaskDelay(1);
         if (WiFi.status() != WL_CONNECTED) {
             fan_pwm_duty_cycle = 180;
         }
@@ -294,7 +298,7 @@ void manage_core_task(void *pv_parameters) {
                 sensorData.humidity = bme280.readFloatHumidity();
                 sensorData.pressure = bme280.readFloatPressure() / 100.0;
 
-                Serial.println("TEMPS");
+                Serial.println("TEMPS22");
                 Serial.println(sensorData.temp);
                 Serial.println(sensorData.humidity);
                 Serial.println(sensorData.pressure);
@@ -360,6 +364,7 @@ void fan_controller_task(void *pv_parameters) {
     attachInterrupt(digitalPinToInterrupt(fan4_tacho_pin), handleInterrupt_fan4, FALLING);
 
     for (;;) {
+        vTaskDelay(10);
         ledcWrite(fan_pwm_channel, fan_pwm_duty_cycle);
     }
 }
@@ -372,7 +377,7 @@ void setup() {
     Serial.begin(115200);
     Serial.println("Monitoring interrupts: ");
 
-    xTaskCreatePinnedToCore(manage_core_task, "ManageTask", 10000, NULL, 0, &Manager_Task, manager_core);
+    xTaskCreatePinnedToCore(manage_core_task, "ManageTask", 10000, NULL, 1, &Manager_Task, manager_core);
     xTaskCreatePinnedToCore(fan_controller_task, "ControllerTask", 10000, NULL, 10, &Fan_Controller_Task, fan_controller_core);
 }
 
